@@ -41,6 +41,43 @@ int getValidIntInput()
             exit(0);
         }
 
+        // Check for command inputs
+        if (input == "/status" || input == "/stats")
+        {
+            std::cout << "\n--- Player Status ---\n";
+            Game::getCurrentPlayer()->displayStats();
+            std::cout << "\nPress Enter to continue...";
+            std::getline(std::cin, input);
+            std::cout << "\nEnter your choice: ";
+            continue;
+        }
+        else if (input == "/inventory" || input == "/inv")
+        {
+            std::cout << "\n--- Inventory ---\n";
+            Game::getCurrentPlayer()->displayInventory();
+            std::cout << "\nPress Enter to continue...";
+            std::getline(std::cin, input);
+            std::cout << "\nEnter your choice: ";
+            continue;
+        }
+        else if (input == "/help")
+        {
+            std::cout << "\n--- Available Commands ---\n";
+            std::cout << "/status or /stats - Display player stats\n";
+            std::cout << "/inventory or /inv - Display inventory\n";
+            std::cout << "/help - Show this help message\n";
+            std::cout << "/exit - Exit the game\n";
+            std::cout << "\nPress Enter to continue...";
+            std::getline(std::cin, input);
+            std::cout << "\nEnter your choice: ";
+            continue;
+        }
+        else if (input == "/exit")
+        {
+            std::cout << "\nExiting game...\n";
+            exit(0);
+        }
+
         try
         {
             if (input.empty())
@@ -63,29 +100,44 @@ int getValidIntInput()
         }
         catch (const std::exception &)
         {
-            std::cout << "Invalid input. Please enter a number: ";
+            std::cout << "Invalid input. Please enter a number (or type /help for commands): ";
         }
     }
 
     return choice;
 }
 
+// Static pointer to the current player for command access
+Player *Game::currentPlayerPtr = nullptr;
+
 Game::Game()
     : currentState(GameState::MAIN_MENU),
       player("Adventurer"),
       currentDungeonLevel(1),
-      maxDungeonLevel(5)
+      maxDungeonLevel(5),
+      currentEnemyIndex(-1)
 {
     initializeGame();
 
     // Set up signal handlers
     std::signal(SIGINT, signalHandler); // Ctrl+C
+
+    // Set the static player pointer
+    currentPlayerPtr = &player;
+}
+
+Player *Game::getCurrentPlayer()
+{
+    return currentPlayerPtr;
 }
 
 void Game::initializeGame()
 {
     createNPCs();
     createEnemies();
+
+    // Add some starter items to player's inventory
+    player.addItem(Item("Health Potion", "Restores 50% of your max health", "🧪", true));
 }
 
 void Game::createNPCs()
@@ -307,6 +359,7 @@ void Game::handleExploring()
 {
     std::cout << "🧭 EXPLORING DUNGEON - LEVEL " << currentDungeonLevel << " 🧭" << std::endl;
     std::cout << "===============================" << std::endl;
+    std::cout << "Type /help for available commands at any time." << std::endl;
 
     player.displayStats();
 
@@ -314,7 +367,9 @@ void Game::handleExploring()
     std::cout << "1. Look for enemies" << std::endl;
     std::cout << "2. Talk to Nick" << std::endl;
     std::cout << "3. Rest (restore some health)" << std::endl;
-    std::cout << "4. Exit game" << std::endl;
+    std::cout << "4. Check inventory" << std::endl;
+    std::cout << "5. Use item" << std::endl;
+    std::cout << "6. Exit game" << std::endl;
 
     std::cout << "\nEnter your choice: ";
     int choice = getValidIntInput();
@@ -331,9 +386,9 @@ void Game::handleExploring()
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> distr(0, enemies.size() - 1);
 
-        int enemyIndex = distr(gen);
-        std::cout << "You encountered a " << enemies[enemyIndex]->getEmoji()
-                  << " " << enemies[enemyIndex]->getName() << "!" << std::endl;
+        currentEnemyIndex = distr(gen);
+        std::cout << "You encountered a " << enemies[currentEnemyIndex]->getEmoji()
+                  << " " << enemies[currentEnemyIndex]->getName() << "!" << std::endl;
 
         pauseGame();
         setState(GameState::COMBAT);
@@ -356,6 +411,13 @@ void Game::handleExploring()
         break;
     }
     case 4:
+        player.displayInventory();
+        pauseGame();
+        break;
+    case 5:
+        handleUseItem();
+        break;
+    case 6:
         setState(GameState::GAME_OVER);
         break;
     default:
@@ -367,13 +429,17 @@ void Game::handleExploring()
 
 void Game::handleCombat()
 {
-    // Find a random enemy to fight
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distr(0, enemies.size() - 1);
+    // Use the enemy that was encountered in handleExploring
+    if (currentEnemyIndex < 0 || currentEnemyIndex >= enemies.size())
+    {
+        // Fallback in case something went wrong
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> distr(0, enemies.size() - 1);
+        currentEnemyIndex = distr(gen);
+    }
 
-    int enemyIndex = distr(gen);
-    Enemy &enemy = *enemies[enemyIndex];
+    Enemy &enemy = *enemies[currentEnemyIndex];
 
     bool combatEnded = false;
 
@@ -382,6 +448,7 @@ void Game::handleCombat()
         clearScreen();
         std::cout << "⚔️ COMBAT ⚔️" << std::endl;
         std::cout << "===========" << std::endl;
+        std::cout << "Type /help for available commands at any time." << std::endl;
 
         player.displayStats();
         std::cout << std::endl;
@@ -390,7 +457,9 @@ void Game::handleCombat()
         std::cout << "\nWhat would you like to do?" << std::endl;
         std::cout << "1. Attack" << std::endl;
         std::cout << "2. Defend (reduce damage taken)" << std::endl;
-        std::cout << "3. Run away" << std::endl;
+        std::cout << "3. Use item" << std::endl;
+        std::cout << "4. Check inventory" << std::endl;
+        std::cout << "5. Run away" << std::endl;
 
         std::cout << "\nEnter your choice: ";
         int choice = getValidIntInput();
@@ -413,6 +482,16 @@ void Game::handleCombat()
                 // Gain rewards
                 player.gainExperience(enemy.getExperienceReward());
                 player.earnBDP(enemy.getBDPReward());
+
+                // Random chance to get an item
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::uniform_int_distribution<> distr(1, 10);
+
+                if (distr(gen) <= 3)
+                { // 30% chance
+                    player.addItem(Item("Health Potion", "Restores 50% of your max health", "🧪", true));
+                }
 
                 // Check if it was the final boss
                 if (enemy.getIsBoss())
@@ -488,6 +567,13 @@ void Game::handleCombat()
             break;
         }
         case 3:
+            handleUseItem();
+            break;
+        case 4:
+            player.displayInventory();
+            pauseGame();
+            break;
+        case 5:
         {
             // Attempt to run away
             std::random_device rd;
@@ -573,12 +659,20 @@ void Game::handleShop()
         itemIndex++;
     }
 
-    std::cout << itemIndex << ". Exit Shop" << std::endl;
+    std::cout << itemIndex << ". Check inventory" << std::endl;
+    std::cout << (itemIndex + 1) << ". Exit Shop" << std::endl;
 
     std::cout << "\nEnter your choice: ";
     int choice = getValidIntInput();
 
     if (choice == itemIndex)
+    {
+        // Check inventory
+        player.displayInventory();
+        pauseGame();
+        return;
+    }
+    else if (choice == itemIndex + 1)
     {
         // Exit shop
         setState(GameState::EXPLORING);
@@ -610,26 +704,28 @@ void Game::handleShop()
     // Purchase the item
     player.spendBDP(itemPrice);
 
-    // Apply item effects
+    // Add item to inventory
+    std::string emoji;
+    std::string description;
+    bool isConsumable = true;
+
     if (itemName == "Health Potion")
     {
-        int healAmount = player.getMaxHealth() / 2; // Heal 50% of max health
-        player.heal(healAmount);
+        emoji = "🧪";
+        description = "Restores 50% of your max health";
     }
     else if (itemName == "Attack Boost")
     {
-        // Permanently increase attack
-        player = Player(player.getName());
-        player.gainExperience(50); // Give some XP to potentially level up
-        std::cout << "\nYour attack power has increased! 💪" << std::endl;
+        emoji = "💪";
+        description = "Permanently increases your attack by 5";
     }
     else if (itemName == "Defense Boost")
     {
-        // Permanently increase defense
-        player = Player(player.getName());
-        player.gainExperience(50); // Give some XP to potentially level up
-        std::cout << "\nYour defense has increased! 🛡️" << std::endl;
+        emoji = "🛡️";
+        description = "Permanently increases your defense by 3";
     }
+
+    player.addItem(Item(itemName, description, emoji, isConsumable));
 
     std::cout << "\nThank you for your purchase!" << std::endl;
     pauseGame();
@@ -665,7 +761,8 @@ void Game::handleNPCInteraction()
     std::cout << "\nWhat would you like to do?" << std::endl;
     std::cout << "1. Talk to " << nick->getName() << std::endl;
     std::cout << "2. Shop" << std::endl;
-    std::cout << "3. Leave" << std::endl;
+    std::cout << "3. Check inventory" << std::endl;
+    std::cout << "4. Leave" << std::endl;
 
     std::cout << "\nEnter your choice: ";
     int choice = getValidIntInput();
@@ -691,6 +788,10 @@ void Game::handleNPCInteraction()
         }
         break;
     case 3:
+        player.displayInventory();
+        pauseGame();
+        break;
+    case 4:
         setState(GameState::EXPLORING);
         break;
     default:
@@ -698,4 +799,41 @@ void Game::handleNPCInteraction()
         pauseGame();
         break;
     }
+}
+
+void Game::handleUseItem()
+{
+    clearScreen();
+    std::cout << "🎒 USE ITEM 🎒" << std::endl;
+    std::cout << "=============" << std::endl;
+
+    player.displayInventory();
+
+    if (player.getInventory().empty())
+    {
+        pauseGame();
+        return;
+    }
+
+    std::cout << "\nEnter the number of the item to use (0 to cancel): ";
+    int choice = getValidIntInput();
+
+    if (choice == 0)
+    {
+        return;
+    }
+
+    if (choice < 1 || choice > player.getInventory().size())
+    {
+        std::cout << "\nInvalid choice. Please try again." << std::endl;
+        pauseGame();
+        return;
+    }
+
+    // Get the selected item
+    const Item &selectedItem = player.getInventory()[choice - 1];
+
+    // Use the item
+    player.useItem(selectedItem.name);
+    pauseGame();
 }

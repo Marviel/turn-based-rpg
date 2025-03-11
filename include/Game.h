@@ -28,6 +28,10 @@ private:
     std::vector<std::unique_ptr<NPC>> npcs;
     int currentDungeonLevel;
     int maxDungeonLevel;
+    int currentEnemyIndex; // Index of the current enemy being fought
+
+    // Static pointer to current player for command access
+    static Player *currentPlayerPtr;
 
     // Private methods
     void initializeGame();
@@ -40,6 +44,7 @@ private:
     void handleExploring();
     void handleShop();
     void handleNPCInteraction();
+    void handleUseItem();
     void levelUp();
     void generateDungeon();
 
@@ -50,6 +55,9 @@ public:
     GameState getState() const;
     void clearScreen();
     void pauseGame();
+
+    // Static method to access current player
+    static Player *getCurrentPlayer();
 };
 
 #endif // GAME_H
